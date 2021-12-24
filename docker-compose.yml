@@ -1,0 +1,113 @@
+version: "3.9"
+
+volumes:
+  airflow-db-volume:
+    driver: local
+
+networks:
+  airflow-network:
+
+services:
+  redis:
+    image: bitnami/redis:6.0
+    networks:
+      - airflow-network
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+
+  postgresql:
+    image: postgres:11.4-alpine
+    networks:
+      - airflow-network
+    environment:
+      POSTGRES_USER: "airflow"
+      POSTGRES_PASSWORD: "airflow"
+      POSTGRES_DB: "airflow"
+      PGDATA: "/pg-data"
+    volumes:
+      - airflow-db-volume:/pg-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  webserver:
+    image: bitnami/airflow:1.10.15
+    networks:
+      - airflow-network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      AIRFLOW_DATABASE_NAME: "airflow"
+      AIRFLOW_DATABASE_USERNAME: "airflow"
+      AIRFLOW_DATABASE_PASSWORD: "airflow"
+      AIRFLOW_EXECUTOR: "CeleryExecutor"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "True"
+    healthcheck:
+      test: curl localhost:8080 -IL || exit 1
+
+  scheduler:
+    image: bitnami/airflow-scheduler:1.10.15
+    networks:
+      - airflow-network
+    depends_on:
+      webserver:
+        condition: service_healthy
+    environment:
+      AIRFLOW_DATABASE_NAME: "airflow"
+      AIRFLOW_DATABASE_USERNAME: "airflow"
+      AIRFLOW_DATABASE_PASSWORD: "airflow"
+      AIRFLOW_EXECUTOR: "CeleryExecutor"
+      AIRFLOW_WEBSERVER_HOST: "webserver"
+
+  worker:
+    image: bitnami/airflow-worker:1.10.15
+    networks:
+      - airflow-network
+    depends_on:
+      scheduler:
+        condition: service_started
+    scale: 2
+    environment:
+      AIRFLOW_DATABASE_NAME: "airflow"
+      AIRFLOW_DATABASE_USERNAME: "airflow"
+      AIRFLOW_DATABASE_PASSWORD: "airflow"
+      AIRFLOW_EXECUTOR: "CeleryExecutor"
+      AIRFLOW_WEBSERVER_HOST: "webserver"
+
+  flower:
+    image: bitnami/airflow:1.10.15
+    networks:
+      - airflow-network
+    depends_on:
+      scheduler:
+        condition: service_started
+      worker:
+        condition: service_started
+    environment:
+      AIRFLOW_DATABASE_NAME: "airflow"
+      AIRFLOW_DATABASE_USERNAME: "airflow"
+      AIRFLOW_DATABASE_PASSWORD: "airflow"
+      AIRFLOW_EXECUTOR: "CeleryExecutor"
+      AIRFLOW_WEBSERVER_HOST: "webserver"
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgresql:5432/airflow"
+      AIRFLOW__CELERY__BROKER_URL: "redis://redis:6379/1"
+      AIRFLOW__CELERY__RESULT_BACKEND: "db+postgresql://airflow:airflow@postgresql:5432/airflow"
+      AIRFLOW__CELERY__FLOWER_URL_PREFIX: "/flower"
+    command: airflow celery flower
+
+  nginx:
+    image: nginx:stable
+    networks:
+      - airflow-network
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      webserver:
+        condition: service_healthy
