@@ -47,6 +47,11 @@ services:
       AIRFLOW_DATABASE_PASSWORD: "airflow"
       AIRFLOW_EXECUTOR: "CeleryExecutor"
       AIRFLOW__CORE__LOAD_EXAMPLES: "True"
+      AIRFLOW_USERNAME: "admin"
+      AIRFLOW_PASSWORD: "admin"
+      AIRFLOW_EMAIL: "admin@gmail.com"
+      AIRFLOW_FIRSTNAME: "Admin"
+      AIRFLOW_LASTNAME: "Adminović"
     healthcheck:
       test: curl localhost:8080 -IL || exit 1
 
